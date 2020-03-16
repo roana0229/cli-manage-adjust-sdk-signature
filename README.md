@@ -7,5 +7,4 @@ Use https://github.com/puppeteer/puppeteer
 `yarn install`
 
 ### get secrets
-  - `EMAIL='メールアドレス' PASSWORD='パスワード' APP_TOKEN='トークン' node getSecrets.js`
-  - created `cache/secrets.json`
+  - `EMAIL='メールアドレス' PASSWORD='パスワード' APP_TOKEN='トークン' node cli-manage-adjust.js`

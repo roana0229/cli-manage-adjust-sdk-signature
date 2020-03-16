@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "inquirer": "^7.1.0",
     "puppeteer": "^2.1.1"
   }
 }
