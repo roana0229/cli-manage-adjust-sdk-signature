@@ -85,6 +85,37 @@ const toEnableSecret = async (page, targetSecretName) => {
   return isSuccessToEnable
 }
 
+const clickDisableSecret = async (page, targetSecretName) => {
+  let isClickToDisable = false
+  const secretElements = await page.$$('span.raw-secret')
+  for (const row of secretElements) {
+    const parent = (await row.$x('..'))[0];
+    const parent2 = (await parent.$x('..'))[0];
+
+    const className = await (await (await parent2.$('.secret-status')).getProperty('className')).jsonValue()
+    const isEnable = className.includes('enable')
+
+    const secretValue = await (await (await parent.$('.secret-value')).getProperty('textContent')).jsonValue();
+    const secretName = secretValue.replace(/\n\s+/g, '')
+    if (isEnable && secretName === targetSecretName) {
+      await (await parent2.$('a[title="無効化"]')).click()
+      isClickToDisable = true
+      break
+    }
+  }
+  return isClickToDisable
+}
+
+const toDisableSecret = async (page) => {
+  log('WIP')
+  // log('キャッシュ用のHTMLを保存')
+  // var html = await page.evaluate(() => { return document.getElementsByTagName('html')[0].innerHTML }); 
+  // await fs.writeFileSync('cache/disable_secret.html', html);
+
+  let isSuccessToDisable = false
+  return isSuccessToDisable
+}
+
 (async () => {
   log('アカウント情報をチェック');
   if (!(EMAIL && PASSWORD && APP_TOKEN)) {
@@ -170,19 +201,35 @@ const toEnableSecret = async (page, targetSecretName) => {
     log(`'${targetSecret.name}'を有効化`)
     const toEnableSecretResult = await toEnableSecret(page, targetSecret.name)
     if (!toEnableSecretResult) {
-      error(`'${targetSecret.name}'を有効化できませんでした`);
+      error(`「'${targetSecret.name}'の有効化ボタン」が取得できませんでした`);
       process.exit(1);
     }
 
     log(`'${targetSecret.name}'を有効化に成功`)
     await page.waitFor(2000);
     await sc(page, 'change_to_enable');
-
-    log('更新後のSDKシグネイチャーを取得')
-    await fs.writeFileSync('cache/secrets.json', JSON.stringify(await getSecrets(page), null, 2));
   } else {
-    log('WIP')
+    log(`'${targetSecret.name}'を無効化`)
+    const clickDisableSecretResult = await clickDisableSecret(page, targetSecret.name)
+    if (!clickDisableSecretResult) {
+      error(`「'${targetSecret.name}'の無効化ボタン」が取得できませんでした`);
+      process.exit(1);
+    }
+    await page.waitForNavigation();
+
+    const toDisableSecretResult = await toDisableSecret(page)
+    if (!toDisableSecretResult) {
+      error(`「'${targetSecret.name}'の無効化決定ボタン」が取得できませんでした`);
+      process.exit(1);
+    }
+
+    log(`'${targetSecret.name}'を無効化に成功`)
+    await page.waitFor(2000);
+    await sc(page, 'change_to_disable');
   }
+
+  log('更新後のSDKシグネイチャーを取得')
+  await fs.writeFileSync('cache/secrets.json', JSON.stringify(await getSecrets(page), null, 2));
 
   await browser.close();
 })();
@@ -193,8 +240,8 @@ const toEnableSecret = async (page, targetSecretName) => {
 //   const page = await browser.newPage();
 
 //   var contentHtml = fs.readFileSync('cache/all_secrets.html', 'utf8');
+//   var contentHtml = fs.readFileSync('cache/disable_secrets.html', 'utf8');
 //   await page.setContent(contentHtml);
-
 
 //   await browser.close();
 // })();
