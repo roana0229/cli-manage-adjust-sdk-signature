@@ -93,37 +93,31 @@ const sc = async (page, name) => {
   await fs.writeFileSync('cache/all_secrets.html', html); 
 
   log('SDKシグネイチャーを取得')
-  const secrets = await page.evaluate(() => {
-    const array = [];
-    const nodeList = document.querySelectorAll('span.raw-secret');
-    nodeList.forEach(node => {
-      const isEnable = node.parentNode.parentNode.getElementsByClassName('secret-status')[0].className.includes('enable')
-      const secretInfo = node.parentNode.innerText.replace('\n', ' ').match(/(.*)\((\d+), (\d+), (\d+), (\d+), (\d+)\)/).slice(1)
-      array.push({
-        isEnable: isEnable,
-        name: secretInfo[0],
-        version: secretInfo[1],
-        secret1: secretInfo[2],
-        secret2: secretInfo[3],
-        secret3: secretInfo[4],
-        secret4: secretInfo[5]
-      });
-    })
-    return array;
-  });
+  const secretElements = await page.$$('span.raw-secret')
+  let secrets = []
+  for (const row of secretElements) {
+    const parent = (await row.$x('..'))[0];
+    const parent2 = (await parent.$x('..'))[0];
+
+    const className = await (await (await parent2.$('.secret-status')).getProperty('className')).jsonValue()
+    const isEnable = className.includes('enable')
+
+    const secretValue = await (await (await parent.$('.secret-value')).getProperty('textContent')).jsonValue();
+    const secretName = secretValue.replace(/\n\s+/g, '')
+    const rawSecret = await (await (await parent.$('.raw-secret')).getProperty('textContent')).jsonValue();
+    const secretInfo = rawSecret.match(/\((\d+), (\d+), (\d+), (\d+), (\d+)\)/).slice(1)
+    secrets.push({
+      isEnable: isEnable,
+      name: secretName,
+      version: secretInfo[0],
+      secret1: secretInfo[1],
+      secret2: secretInfo[2],
+      secret3: secretInfo[3],
+      secret4: secretInfo[4]
+    });
+  }
   log('`cache/secrets.json`')
   await fs.writeFileSync('cache/secrets.json', JSON.stringify(secrets, null, 2)); 
 
   await browser.close();
 })();
-
-// // デバッグ用のコード
-// // (async () => {
-// //   const browser = await puppeteer.launch();
-// //   const page = await browser.newPage();
-
-// //   var contentHtml = fs.readFileSync('cache/all_secrets.html', 'utf8');
-// //   await page.setContent(contentHtml);
-
-// //   await browser.close();
-// // })();
