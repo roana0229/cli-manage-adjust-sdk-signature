@@ -107,12 +107,26 @@ const clickDisableSecret = async (page, targetSecretName) => {
 }
 
 const toDisableSecret = async (page) => {
-  log('WIP')
-  // log('キャッシュ用のHTMLを保存')
-  // var html = await page.evaluate(() => { return document.getElementsByTagName('html')[0].innerHTML }); 
-  // await fs.writeFileSync('cache/disable_secret.html', html);
-
   let isSuccessToDisable = false
+
+  const disableButtonSelector = 'div>div>button'
+  const disableButtonText = await page.evaluate((selector) => {
+    return document.querySelector(selector).innerText;
+  }, disableButtonSelector);
+
+  if (disableButtonText == '無効化') {
+    const disableButton = await page.$(disableButtonSelector);
+    disableButton.click();
+    await page.waitFor(1000);
+    await sc(page, 'change_to_disable_click_1');
+    await (await page.$('a[title="OK"]')).click();
+    await page.waitFor(1000);
+    await sc(page, 'change_to_disable_click_2');
+    await page.waitForNavigation();
+
+    isSuccessToDisable = true
+  }
+
   return isSuccessToDisable
 }
 
@@ -175,6 +189,7 @@ const toDisableSecret = async (page) => {
   log('SDKシグネイチャーを取得')
   const secrets = await getSecrets(page);
   await fs.writeFileSync('cache/secrets.json', JSON.stringify(secrets, null, 2));
+  log(`SDKシグネイチャーを表示\n====================${secrets.map(s => `${s.name} (isEnable: ${s.isEnable})`).join('\n')}\n====================`)
 
   const answer = await inquirer.prompt([
     {
@@ -206,8 +221,6 @@ const toDisableSecret = async (page) => {
     }
 
     log(`'${targetSecret.name}'を有効化に成功`)
-    await page.waitFor(2000);
-    await sc(page, 'change_to_enable');
   } else {
     log(`'${targetSecret.name}'を無効化`)
     const clickDisableSecretResult = await clickDisableSecret(page, targetSecret.name)
@@ -224,12 +237,12 @@ const toDisableSecret = async (page) => {
     }
 
     log(`'${targetSecret.name}'を無効化に成功`)
-    await page.waitFor(2000);
-    await sc(page, 'change_to_disable');
   }
 
   log('更新後のSDKシグネイチャーを取得')
-  await fs.writeFileSync('cache/secrets.json', JSON.stringify(await getSecrets(page), null, 2));
+  const updatedSecrets = await getSecrets(page);
+  await fs.writeFileSync('cache/secrets.json', JSON.stringify(updatedSecrets, null, 2));
+  log(`SDKシグネイチャーを表示\n====================${updatedSecrets.map(s => `${s.name} (isEnable: ${s.isEnable})`).join('\n')}\n====================`)
 
   await browser.close();
 })();
@@ -239,8 +252,8 @@ const toDisableSecret = async (page) => {
 //   const browser = await puppeteer.launch();
 //   const page = await browser.newPage();
 
-//   var contentHtml = fs.readFileSync('cache/all_secrets.html', 'utf8');
-//   var contentHtml = fs.readFileSync('cache/disable_secrets.html', 'utf8');
+//   // var contentHtml = fs.readFileSync('cache/all_secrets.html', 'utf8');
+//   var contentHtml = fs.readFileSync('cache/disable_secret.html', 'utf8');
 //   await page.setContent(contentHtml);
 
 //   await browser.close();
