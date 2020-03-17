@@ -64,6 +64,16 @@ const getSecrets = async (page) => {
   return secrets
 }
 
+const newSecret = async (page, secretName) => {
+  await (await page.$('a[href$="/secrets/create"]')).click();
+  await page.waitForSelector('#name');
+  await page.waitFor(1000);
+  await page.type('#name', secretName);
+  page.keyboard.press('Enter');
+  await page.waitForNavigation();
+  await page.waitFor(1000);
+}
+
 const toEnableSecret = async (page, targetSecretName) => {
   let isSuccessToEnable = false
   const secretElements = await page.$$('span.raw-secret')
@@ -147,7 +157,7 @@ const toDisableSecret = async (page) => {
   const page = await browser.newPage();
 
   log('Adjustのログイン画面を表示');
-  await page.goto('https://dash.adjust.com/#/login');
+  page.goto('https://dash.adjust.com/#/login');
   await page.waitForSelector('#email');
   await page.waitFor(1000);
   await sc(page, 'login');
@@ -158,13 +168,14 @@ const toDisableSecret = async (page) => {
   await sc(page, 'login_input');
 
   log('ログイン実行');
-  await page.keyboard.press('Enter');
+  page.keyboard.press('Enter');
   await page.waitForNavigation();
   await page.waitFor(1000);
   await sc(page, 'login_complete');
 
   log('SDKシグネイチャー画面を表示');
-  await page.goto(`https://dash.adjust.com/#/setup/${APP_TOKEN}/secrets`);
+  page.goto(`https://dash.adjust.com/#/setup/${APP_TOKEN}/secrets`);
+  await page.waitForNavigation();
   await page.waitFor(4000);
   await sc(page, 'secrets');
 
@@ -189,72 +200,74 @@ const toDisableSecret = async (page) => {
   log('SDKシグネイチャーを取得')
   const secrets = await getSecrets(page);
   await fs.writeFileSync('cache/secrets.json', JSON.stringify(secrets, null, 2));
-  log(`SDKシグネイチャーを表示\n====================${secrets.map(s => `${s.name} (isEnable: ${s.isEnable})`).join('\n')}\n====================`)
+  log(`SDKシグネイチャーを表示\n====================\n${secrets.map(s => `${s.name} (isEnable: ${s.isEnable})`).join('\n')}\n====================`)
 
-  const answer = await inquirer.prompt([
-    {
-      'type': 'list',
-      'name': 'targetSecret',
-      'message': 'どのシークレットを変更しますか?',
-      'choices': secrets.map(s => s.name)
-    },
+  const modeAnswer = await inquirer.prompt([
     {
       'type': 'list',
       'name': 'mode',
       'message': 'どの操作を行いますか？',
-      'choices': ['有効化', '無効化']
+      'choices': ['新規作成', '既存の有効化', '既存の無効化']
     }
   ])
-  const targetSecret = secrets.filter(s => s.name === answer.targetSecret)[0]
-  const toEnable = answer.mode === '有効化'
-  if (targetSecret.isEnable === toEnable) {
-    error(`'${answer.targetSecret}'は既に'${answer.mode}'されています`)
-    process.exit(1);
-  }
 
-  if (toEnable) {
-    log(`'${targetSecret.name}'を有効化`)
-    const toEnableSecretResult = await toEnableSecret(page, targetSecret.name)
-    if (!toEnableSecretResult) {
-      error(`「'${targetSecret.name}'の有効化ボタン」が取得できませんでした`);
-      process.exit(1);
-    }
+  if (modeAnswer.mode === '新規作成') {
+    const secretNameAnswer = await inquirer.prompt([
+      {
+        'name': 'secretName',
+        'message': 'アプリシークレット名を入力してください'
+      }
+    ])
+    
+    log('新規作成実行');
+    await newSecret(page, secretNameAnswer.secretName);
 
-    log(`'${targetSecret.name}'を有効化に成功`)
+    log(`'${secretNameAnswer.secretName}'の作成に成功`)
   } else {
-    log(`'${targetSecret.name}'を無効化`)
-    const clickDisableSecretResult = await clickDisableSecret(page, targetSecret.name)
-    if (!clickDisableSecretResult) {
-      error(`「'${targetSecret.name}'の無効化ボタン」が取得できませんでした`);
-      process.exit(1);
-    }
-    await page.waitForNavigation();
+    const toEnableMode = modeAnswer.mode === '既存の有効化'
+    const answer = await inquirer.prompt([
+      {
+        'type': 'list',
+        'name': 'targetSecret',
+        'message': 'どのシークレットを変更しますか?',
+        'choices': secrets.filter(s => s.isEnable === !toEnableMode).map(s => s.name)
+      },
+    ])
+    const targetSecret = secrets.filter(s => s.name === answer.targetSecret)[0]
 
-    const toDisableSecretResult = await toDisableSecret(page)
-    if (!toDisableSecretResult) {
-      error(`「'${targetSecret.name}'の無効化決定ボタン」が取得できませんでした`);
-      process.exit(1);
+    if (toEnableMode) {
+      log(`'${targetSecret.name}'を有効化`)
+      const toEnableSecretResult = await toEnableSecret(page, targetSecret.name)
+      if (!toEnableSecretResult) {
+        error(`「'${targetSecret.name}'の有効化ボタン」が取得できませんでした`);
+        process.exit(1);
+      }
+  
+      log(`'${targetSecret.name}'を有効化に成功`)
+    } else {
+      log(`'${targetSecret.name}'を無効化`)
+      const clickDisableSecretResult = await clickDisableSecret(page, targetSecret.name)
+      if (!clickDisableSecretResult) {
+        error(`「'${targetSecret.name}'の無効化ボタン」が取得できませんでした`);
+        process.exit(1);
+      }
+      await page.waitForNavigation();
+  
+      const toDisableSecretResult = await toDisableSecret(page)
+      if (!toDisableSecretResult) {
+        error(`「'${targetSecret.name}'の無効化決定ボタン」が取得できませんでした`);
+        process.exit(1);
+      }
+  
+      log(`'${targetSecret.name}'を無効化に成功`)
     }
-
-    log(`'${targetSecret.name}'を無効化に成功`)
   }
 
+  await page.waitFor(2000);
   log('更新後のSDKシグネイチャーを取得')
   const updatedSecrets = await getSecrets(page);
   await fs.writeFileSync('cache/secrets.json', JSON.stringify(updatedSecrets, null, 2));
-  log(`SDKシグネイチャーを表示\n====================${updatedSecrets.map(s => `${s.name} (isEnable: ${s.isEnable})`).join('\n')}\n====================`)
+  log(`SDKシグネイチャーを表示\n====================\n${updatedSecrets.map(s => `${s.name} (isEnable: ${s.isEnable})`).join('\n')}\n====================`)
 
   await browser.close();
 })();
-
-// // デバッグ用のコード
-// (async () => {
-//   const browser = await puppeteer.launch();
-//   const page = await browser.newPage();
-
-//   // var contentHtml = fs.readFileSync('cache/all_secrets.html', 'utf8');
-//   var contentHtml = fs.readFileSync('cache/disable_secret.html', 'utf8');
-//   await page.setContent(contentHtml);
-
-//   await browser.close();
-// })();
