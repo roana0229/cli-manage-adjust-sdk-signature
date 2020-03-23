@@ -1,10 +1,14 @@
+'use strict';
+
 const puppeteer = require('puppeteer');
 const fs = require('fs');
-const inquirer = require('inquirer');
 
 const EMAIL = process.env.EMAIL;
 const PASSWORD = process.env.PASSWORD;
 const APP_TOKEN = process.env.APP_TOKEN;
+
+const ARGV = require('minimist')(process.argv.slice(2));
+const IS_DEBUG = ARGV['debug'] || false;
 
 var screenshotsCount = 0
 
@@ -20,17 +24,23 @@ const nowDateString = () => {
 }
 
 const log = (message) => {
-  console.log(`${nowDateString()}> ${message}`);
+  process.stderr.write(`${nowDateString()}> ${message}\n`);
 }
 
 const error = (message) => {
-  console.log(`${nowDateString()} >`);
   console.error('==========ERROR==========');
   console.error(message);
   console.error('=========================');
+  process.exit(1);
+}
+
+const outputResult = (message) => {
+  console.log(message)
 }
 
 const sc = async (page, name) => {
+  if (!IS_DEBUG) return;
+
   const fileName = `${screenshotsCount}_${name}.png`;
   screenshotsCount += 1;
   log(`take screenshots: ${fileName}`);
@@ -128,10 +138,10 @@ const toDisableSecret = async (page) => {
     const disableButton = await page.$(disableButtonSelector);
     disableButton.click();
     await page.waitFor(1000);
-    await sc(page, 'change_to_disable_click_1');
+    if (IS_DEBUG) await sc(page, 'change_to_disable_click_1');
     await (await page.$('a[title="OK"]')).click();
     await page.waitFor(1000);
-    await sc(page, 'change_to_disable_click_2');
+    if (IS_DEBUG) await sc(page, 'change_to_disable_click_2');
     await page.waitForNavigation();
 
     isSuccessToDisable = true
@@ -141,133 +151,148 @@ const toDisableSecret = async (page) => {
 }
 
 (async () => {
-  log('アカウント情報をチェック');
+  log('Check Adjust account');
   if (!(EMAIL && PASSWORD && APP_TOKEN)) {
-    error('環境変数に`EMAIL`,`PASSWORD`,`APP_TOKEN`を設定してください');
-    process.exit(1);
+    error('Require env: `EMAIL`,`PASSWORD`,`APP_TOKEN`');
   }
-  
-  log('`cache`,`screenshots`ディレクトリを初期化');
-  fs.rmdirSync('cache', { recursive: true })
-  fs.mkdirSync('cache')
-  fs.rmdirSync('screenshots', { recursive: true })
-  fs.mkdirSync('screenshots')
+  if (!ARGV['current'] && !(ARGV['app'] && ARGV['version'])) {
+    error('Require `--app,--version` (a.g. `node cli-manage-adjust.js --app YourAppName --version YourAppVersion`)');
+  }
 
-  const browser = await puppeteer.launch();
+  const targetSecretName = `${ARGV['app']}#${ARGV['version']}`;
+  const changeToDisableMode = ARGV['disable'] || false;
+  const showCurrentOnly = ARGV['current'] || false;
+
+  if (IS_DEBUG) {
+    log('Initialize `cache`,`screenshots` directory');
+    fs.rmdirSync('cache', { recursive: true })
+    fs.mkdirSync('cache')
+    fs.rmdirSync('screenshots', { recursive: true })
+    fs.mkdirSync('screenshots')
+  }
+
+  const browser = await puppeteer.launch({
+    args: ['--lang=ja,en-US,en']
+  });
   const page = await browser.newPage();
+  await page.setDefaultNavigationTimeout(2 * 60 * 1000);
 
-  log('Adjustのログイン画面を表示');
-  page.goto('https://dash.adjust.com/#/login');
+  log('Open https://dash.adjust.com/');
+  page.goto('https://dash.adjust.com/');
   await page.waitForSelector('#email');
   await page.waitFor(1000);
   await sc(page, 'login');
 
-  log('ログイン情報を入力');
+  log('Input account email and password');
   await page.type('#email', EMAIL);
   await page.type('#password', PASSWORD);
   await sc(page, 'login_input');
 
-  log('ログイン実行');
+  log('Now login ...');
   page.keyboard.press('Enter');
   await page.waitForNavigation();
   await page.waitFor(1000);
   await sc(page, 'login_complete');
+  log('Login completed.');
 
-  log('SDKシグネイチャー画面を表示');
+  log('Open https://dash.adjust.com/#/setup/APP_TOKEN/secrets');
   page.goto(`https://dash.adjust.com/#/setup/${APP_TOKEN}/secrets`);
   await page.waitForNavigation();
   await page.waitFor(4000);
   await sc(page, 'secrets');
 
-  log('無効なSDKシグネイチャーを表示');
-  const showDisableSecretsToggleSelector = 'div>label>input[type="checkbox"]'
+  log('Change to visible all secrets');
+  const showDisableSecretsToggleSelector = 'div>label>input[type="checkbox"]';
   const showDisableSecretsToggleText = await page.evaluate((selector) => {
     return document.querySelector(selector).parentNode.innerText;
   }, showDisableSecretsToggleSelector);
   if (!showDisableSecretsToggleText.includes('無効化されているアプリシークレットを表示')) {
-    error('「無効化されているアプリシークレットを表示」が取得できませんでした');
-    process.exit(1);
+    error('Can\'t get html element \'無効化されているアプリシークレットを表示\'');
   }
   const disableShowSecretToggle = await page.$(showDisableSecretsToggleSelector);
   disableShowSecretToggle.click();
   await page.waitFor(1000);
   await sc(page, 'show_all_secrets');
 
-  log('キャッシュ用のHTMLを保存')
-  var html = await page.evaluate(() => { return document.getElementsByTagName('html')[0].innerHTML }); 
-  await fs.writeFileSync('cache/all_secrets.html', html); 
-
-  log('SDKシグネイチャーを取得')
+  log('Get all secrets');
   const secrets = await getSecrets(page);
   await fs.writeFileSync('cache/secrets.json', JSON.stringify(secrets, null, 2));
-  log(`SDKシグネイチャーを表示\n====================\n${secrets.map(s => `${s.name} (isEnable: ${s.isEnable})`).join('\n')}\n====================`)
+  log(`Show currrent Adjust SDK Signature\n====================\n${secrets.map(s => `${s.name} (enable: ${s.isEnable})`).join('\n')}\n====================`);
 
-  const modeAnswer = await inquirer.prompt([
-    {
-      'type': 'list',
-      'name': 'mode',
-      'message': 'どの操作を行いますか？',
-      'choices': ['新規作成', '既存の有効化', '既存の無効化']
-    }
-  ])
+  if (showCurrentOnly) {
+    process.exit(0);
+  }
 
-  if (modeAnswer.mode === '新規作成') {
-    const secretNameAnswer = await inquirer.prompt([
-      {
-        'name': 'secretName',
-        'message': 'アプリシークレット名を入力してください'
-      }
-    ])
+  log(`${changeToDisableMode ? 'Change to disable' : 'Find or get'} secret '${targetSecretName}'`);
+
+  const targetSecretOnAdjust = secrets.filter(s => s.name === targetSecretName)[0];
+  let changedSecret = false;
+
+  if (changeToDisableMode) {
+    if (targetSecretOnAdjust) {
+      log(`Find secret '${targetSecretName}'`)
+      if (targetSecretOnAdjust.isEnable) {
+        log(`Change to disable secret '${targetSecretName}'`);
+
+        const clickDisableSecretResult = await clickDisableSecret(page, targetSecretName);
+        if (!clickDisableSecretResult) {
+          error(`Can't get html element 'disable button'`);
+        }
+        await page.waitForNavigation();
     
-    log('新規作成実行');
-    await newSecret(page, secretNameAnswer.secretName);
+        const toDisableSecretResult = await toDisableSecret(page);
+        if (!toDisableSecretResult) {
+          error(`Can't get html element 'confirm disable button'`);
+        }
 
-    log(`'${secretNameAnswer.secretName}'の作成に成功`)
-  } else {
-    const toEnableMode = modeAnswer.mode === '既存の有効化'
-    const answer = await inquirer.prompt([
-      {
-        'type': 'list',
-        'name': 'targetSecret',
-        'message': 'どのシークレットを変更しますか?',
-        'choices': secrets.filter(s => s.isEnable === !toEnableMode).map(s => s.name)
-      },
-    ])
-    const targetSecret = secrets.filter(s => s.name === answer.targetSecret)[0]
-
-    if (toEnableMode) {
-      log(`'${targetSecret.name}'を有効化`)
-      const toEnableSecretResult = await toEnableSecret(page, targetSecret.name)
-      if (!toEnableSecretResult) {
-        error(`「'${targetSecret.name}'の有効化ボタン」が取得できませんでした`);
-        process.exit(1);
+        changedSecret = true;
+      } else {
+        log(`Already disabled secret '${targetSecretName}'`);
       }
-  
-      log(`'${targetSecret.name}'を有効化に成功`)
     } else {
-      log(`'${targetSecret.name}'を無効化`)
-      const clickDisableSecretResult = await clickDisableSecret(page, targetSecret.name)
-      if (!clickDisableSecretResult) {
-        error(`「'${targetSecret.name}'の無効化ボタン」が取得できませんでした`);
-        process.exit(1);
+      error(`Can't find secret '${targetSecretName}'`);
+    }
+  } else {
+    if (targetSecretOnAdjust) {
+      log(`Find secret '${targetSecretName}'`);
+      if (!targetSecretOnAdjust.isEnable) {
+        log(`Change to enable secret '${targetSecretName}'`);
+        const toEnableSecretResult = await toEnableSecret(page, targetSecretName);
+        if (!toEnableSecretResult) {
+          error(`Can't get html element 'enable button'`);
+        }
+
+        changedSecret = true;
       }
-      await page.waitForNavigation();
-  
-      const toDisableSecretResult = await toDisableSecret(page)
-      if (!toDisableSecretResult) {
-        error(`「'${targetSecret.name}'の無効化決定ボタン」が取得できませんでした`);
-        process.exit(1);
+      outputResult(JSON.stringify(targetSecretOnAdjust));
+    } else {
+      log(`Can't find secret '${targetSecretName}'`);
+      log(`Create new secret '${targetSecretName}'`);
+      await newSecret(page, targetSecretName);
+
+      const updatedSecrets = await getSecrets(page);
+      const createdSecret = updatedSecrets.filter(s => s.name === targetSecretName)[0];
+
+      if (createdSecret) {
+        outputResult(JSON.stringify(createdSecret));
+        changedSecret = true;
+      } else {
+        error(`Can't create new secret`)
       }
-  
-      log(`'${targetSecret.name}'を無効化に成功`)
     }
   }
 
-  await page.waitFor(2000);
-  log('更新後のSDKシグネイチャーを取得')
-  const updatedSecrets = await getSecrets(page);
-  await fs.writeFileSync('cache/secrets.json', JSON.stringify(updatedSecrets, null, 2));
-  log(`SDKシグネイチャーを表示\n====================\n${updatedSecrets.map(s => `${s.name} (isEnable: ${s.isEnable})`).join('\n')}\n====================`)
+  if (changedSecret) {
+    await page.waitFor(2000);
+    const updatedSecrets = await getSecrets(page);
+    await fs.writeFileSync('cache/updatedSecrets.json', JSON.stringify(updatedSecrets, null, 2));
+    log(`Show updated Adjust SDK Signature\n====================\n${updatedSecrets.map(s => `${s.name} (enable: ${s.isEnable})`).join('\n')}\n====================`)
+  }
+
+  log('All completed')
 
   await browser.close();
-})();
+})().catch(err => {
+  console.error(err.stack || err)
+  process.exit(1)
+});
