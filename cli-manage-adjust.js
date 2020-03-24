@@ -187,7 +187,7 @@ const runDisableSecret = async (page, targetSecretName) => {
 (async () => {
   log('Check Adjust account');
   if (!(EMAIL && PASSWORD && APP_TOKEN)) {
-    error('Require env: `EMAIL`,`PASSWORD`,`APP_TOKEN`');
+    error('Require env: `ADJUST_EMAIL`,`ADJUST_PASSWORD`,`ADJUST_APP_TOKEN`');
   }
   if (!ARGV['current'] && !(ARGV['app'] && ARGV['version'])) {
     error('Require `--app,--version` (a.g. `node cli-manage-adjust.js --app YourAppName --version YourAppVersion`)');
