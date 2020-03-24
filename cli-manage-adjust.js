@@ -138,16 +138,50 @@ const toDisableSecret = async (page) => {
     const disableButton = await page.$(disableButtonSelector);
     disableButton.click();
     await page.waitFor(1000);
-    if (IS_DEBUG) await sc(page, 'change_to_disable_click_1');
+    await sc(page, 'change_to_disable_click_1');
     await (await page.$('a[title="OK"]')).click();
     await page.waitFor(1000);
-    if (IS_DEBUG) await sc(page, 'change_to_disable_click_2');
+    await sc(page, 'change_to_disable_click_2');
     await page.waitForNavigation();
 
     isSuccessToDisable = true
   }
 
   return isSuccessToDisable
+}
+
+const runNewSecret = async (page, targetSecretName) => {
+  log(`Create new secret '${targetSecretName}'`);
+  await newSecret(page, targetSecretName);
+
+  const updatedSecrets = await getSecrets(page);
+  const createdSecret = updatedSecrets.filter(s => s.name === targetSecretName)[0];
+  if (!createdSecret) {
+    error(`Can't create new secret`)
+  }
+}
+
+const runEnableSecret = async (page, targetSecretName) => {
+  log(`Change to enable secret '${targetSecretName}'`);
+  const toEnableSecretResult = await toEnableSecret(page, targetSecretName);
+  if (!toEnableSecretResult) {
+    error(`Can't get html element 'enable button'`);
+  }
+}
+
+const runDisableSecret = async (page, targetSecretName) => {
+  log(`Change to disable secret '${targetSecretName}'`);
+
+  const clickDisableSecretResult = await clickDisableSecret(page, targetSecretName);
+  if (!clickDisableSecretResult) {
+    error(`Can't get html element 'disable button'`);
+  }
+  await page.waitForNavigation();
+
+  const toDisableSecretResult = await toDisableSecret(page);
+  if (!toDisableSecretResult) {
+    error(`Can't get html element 'confirm disable button'`);
+  }
 }
 
 (async () => {
@@ -216,78 +250,45 @@ const toDisableSecret = async (page) => {
 
   log('Get all secrets');
   const secrets = await getSecrets(page);
-  await fs.writeFileSync('cache/secrets.json', JSON.stringify(secrets, null, 2));
-  log(`Show currrent Adjust SDK Signature\n====================\n${secrets.map(s => `${s.name} (enable: ${s.isEnable})`).join('\n')}\n====================`);
+  if (IS_DEBUG) await fs.writeFileSync('cache/secrets.json', JSON.stringify(secrets, null, 2));
+  log(`Show currrent Adjust SDK Signature\n-------------------------\n${secrets.map(s => `${s.name} (enable: ${s.isEnable})`).join('\n')}\n-------------------------`);
 
   if (showCurrentOnly) {
     process.exit(0);
   }
 
   log(`${changeToDisableMode ? 'Change to disable' : 'Find or get'} secret '${targetSecretName}'`);
-
   const targetSecretOnAdjust = secrets.filter(s => s.name === targetSecretName)[0];
-  let changedSecret = false;
 
   if (changeToDisableMode) {
     if (targetSecretOnAdjust) {
       log(`Find secret '${targetSecretName}'`)
       if (targetSecretOnAdjust.isEnable) {
-        log(`Change to disable secret '${targetSecretName}'`);
-
-        const clickDisableSecretResult = await clickDisableSecret(page, targetSecretName);
-        if (!clickDisableSecretResult) {
-          error(`Can't get html element 'disable button'`);
-        }
-        await page.waitForNavigation();
-    
-        const toDisableSecretResult = await toDisableSecret(page);
-        if (!toDisableSecretResult) {
-          error(`Can't get html element 'confirm disable button'`);
-        }
-
-        changedSecret = true;
+        await runDisableSecret(page, targetSecretName);
       } else {
         log(`Already disabled secret '${targetSecretName}'`);
       }
     } else {
-      error(`Can't find secret '${targetSecretName}'`);
+      error(`Not found secret '${targetSecretName}'`);
     }
   } else {
     if (targetSecretOnAdjust) {
       log(`Find secret '${targetSecretName}'`);
       if (!targetSecretOnAdjust.isEnable) {
-        log(`Change to enable secret '${targetSecretName}'`);
-        const toEnableSecretResult = await toEnableSecret(page, targetSecretName);
-        if (!toEnableSecretResult) {
-          error(`Can't get html element 'enable button'`);
-        }
-
-        changedSecret = true;
+        await runEnableSecret(page, targetSecretName);
       }
-      outputResult(JSON.stringify(targetSecretOnAdjust));
     } else {
-      log(`Can't find secret '${targetSecretName}'`);
-      log(`Create new secret '${targetSecretName}'`);
-      await newSecret(page, targetSecretName);
-
-      const updatedSecrets = await getSecrets(page);
-      const createdSecret = updatedSecrets.filter(s => s.name === targetSecretName)[0];
-
-      if (createdSecret) {
-        outputResult(JSON.stringify(createdSecret));
-        changedSecret = true;
-      } else {
-        error(`Can't create new secret`)
-      }
+      log(`Not found secret '${targetSecretName}'`);
+      await runNewSecret(page, targetSecretName);
     }
   }
 
-  if (changedSecret) {
-    await page.waitFor(2000);
-    const updatedSecrets = await getSecrets(page);
-    await fs.writeFileSync('cache/updatedSecrets.json', JSON.stringify(updatedSecrets, null, 2));
-    log(`Show updated Adjust SDK Signature\n====================\n${updatedSecrets.map(s => `${s.name} (enable: ${s.isEnable})`).join('\n')}\n====================`)
-  }
+  await page.waitFor(2000);
+  const updatedSecrets = await getSecrets(page);
+  const updatedTargetSecretOnAdjust = updatedSecrets.filter(s => s.name === targetSecretName)[0];
+  outputResult(JSON.stringify(updatedTargetSecretOnAdjust));
+  log(`Show updated Adjust SDK Signature\n-------------------------\n${updatedSecrets.map(s => `${s.name} (enable: ${s.isEnable})`).join('\n')}\n-------------------------`)
+  if (IS_DEBUG) await fs.writeFileSync('cache/updatedSecrets.json', JSON.stringify(updatedSecrets, null, 2));
 
   log('All completed')
 
