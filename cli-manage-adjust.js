@@ -3,9 +3,9 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 
-const EMAIL = process.env.EMAIL;
-const PASSWORD = process.env.PASSWORD;
-const APP_TOKEN = process.env.APP_TOKEN;
+const EMAIL = process.env.ADJUST_EMAIL;
+const PASSWORD = process.env.ADJUST_PASSWORD;
+const APP_TOKEN = process.env.ADJUST_APP_TOKEN;
 
 const ARGV = require('minimist')(process.argv.slice(2));
 const IS_DEBUG = ARGV['debug'] || false;
