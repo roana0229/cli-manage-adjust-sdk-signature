@@ -206,7 +206,7 @@ const runDisableSecret = async (page, targetSecretName) => {
   }
 
   const browser = await puppeteer.launch({
-    args: ['--lang=ja,en-US,en']
+    args: ['--lang=ja,en-US,en', '--no-sandbox', '--disable-setuid-sandbox'] // require no-sandbox on docker
   });
   const page = await browser.newPage();
   await page.setDefaultNavigationTimeout(2 * 60 * 1000);
