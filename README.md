@@ -9,7 +9,7 @@ yarn install
 ADJUST_EMAIL='xxx' ADJUST_PASSWORD='xxx' ADJUST_APP_TOKEN='xxx' node cli-manage-adjust.js --app AppName --version AppVersion
 ```
 
-a.g.
+e.g.
 
 ```
 ADJUST_EMAIL='xxx' ADJUST_PASSWORD='xxx' ADJUST_APP_TOKEN='xxx' node cli-manage-adjust.js --app ExampleApp --version 1.0.0
