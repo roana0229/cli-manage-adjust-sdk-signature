@@ -195,7 +195,7 @@ const runDisableSecret = async (page, targetSecretName) => {
 
   const targetSecretName = `${ARGV['app']}#${ARGV['version']}`;
   const changeToDisableMode = ARGV['disable'] || false;
-  const showCurrentOnly = ARGV['current'] || false;
+  const currentOnly = ARGV['current'] || false;
 
   if (IS_DEBUG) {
     log('Initialize `cache`,`screenshots` directory');
@@ -251,10 +251,12 @@ const runDisableSecret = async (page, targetSecretName) => {
   log('Get all secrets');
   const secrets = await getSecrets(page);
   if (IS_DEBUG) await fs.writeFileSync('cache/secrets.json', JSON.stringify(secrets, null, 2));
-  log(`Show currrent Adjust SDK Signature\n-------------------------\n${secrets.map(s => `${s.name} (enable: ${s.isEnable})`).join('\n')}\n-------------------------`);
 
-  if (showCurrentOnly) {
+  if (currentOnly) {
+    outputResult(JSON.stringify(secrets))
     process.exit(0);
+  } else {
+    log(`Show currrent Adjust SDK Signature\n-------------------------\n${secrets.map(s => `${s.name} (enable: ${s.isEnable})`).join('\n')}\n-------------------------`);    
   }
 
   log(`${changeToDisableMode ? 'Change to disable' : 'Find or get'} secret '${targetSecretName}'`);
